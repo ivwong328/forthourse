@@ -207,42 +207,51 @@ def run_task(
     label_col: str,
     drop_cols: List[str],
     outdir: str,
-    seed: int = 42
+    seed: int = 42,
+    group_col: str = "session_id"
 ) -> Dict[str, object]:
-    """
-    Train + evaluate a baseline classifier for one task.
-    Saves:
-      - report.txt, report.json
-      - confusion_matrix.csv
-      - model.joblib
-      - permutation_importance_top.csv
-    """
     ensure_dir(outdir)
 
-    # Basic cleanup
     df2 = df.copy()
     df2 = df2.dropna(subset=[label_col])
 
-    # Drop explicitly requested columns
-    for c in drop_cols:
-        if c in df2.columns:
-            df2 = df2.drop(columns=[c])
+    # IMPORTANT: keep group_col for splitting even if user wants it dropped from features
+    if group_col not in df2.columns:
+        raise ValueError(f"[{task_name}] Missing group column: {group_col}")
 
-    # Split
-    X_train, X_test, y_train, y_test = group_split(df2, label_col=label_col, seed=seed)
+    # Split by session first (indices)
+    train_idx, test_idx = group_split_idx(df2, label_col=label_col, group_col=group_col, seed=seed)
+
+    train_df = df2.iloc[train_idx].copy()
+    test_df  = df2.iloc[test_idx].copy()
+
+    # Build X/y AFTER split
+    y_train = train_df[label_col].copy()
+    y_test  = test_df[label_col].copy()
+
+    X_train = train_df.drop(columns=[label_col])
+    X_test  = test_df.drop(columns=[label_col])
+
+    # Drop columns from FEATURES ONLY (safe now)
+    for c in drop_cols:
+        if c in X_train.columns:
+            X_train = X_train.drop(columns=[c])
+        if c in X_test.columns:
+            X_test = X_test.drop(columns=[c])
 
     # Train
     pipe = build_model_pipeline(X_train, class_weight="balanced")
     pipe.fit(X_train, y_train)
 
-    # Predict
     preds = pipe.predict(X_test)
 
-    # Metrics
-    labels_sorted = sorted(list(pd.Series(y_test).dropna().unique()))
+    # Labels: use union of y_train + y_test so confusion matrix shape is stable
+    labels_sorted = sorted(pd.Series(pd.concat([y_train, y_test])).dropna().unique().tolist())
+
     cm = confusion_matrix(y_test, preds, labels=labels_sorted)
     acc = accuracy_score(y_test, preds)
     report_txt = classification_report(y_test, preds, digits=4)
+
     report_obj = {
         "task": task_name,
         "label_col": label_col,
@@ -253,39 +262,27 @@ def run_task(
         "classification_report": report_txt
     }
 
-    # Save outputs
     write_text(os.path.join(outdir, "report.txt"), f"{task_name}\n\nAccuracy: {acc:.4f}\n\n{report_txt}\n")
     write_json(os.path.join(outdir, "report.json"), report_obj)
     save_confusion_matrix(cm, labels_sorted, os.path.join(outdir, "confusion_matrix.csv"))
     joblib.dump(pipe, os.path.join(outdir, "model.joblib"))
 
-    # Permutation importance (optional but useful)
-    # NOTE: This runs on the pipeline; sklearn will permute raw input columns.
+    # Permutation importance
     try:
         r = permutation_importance(
-            pipe,
-            X_test,
-            y_test,
-            n_repeats=5,
-            random_state=seed,
-            scoring="f1_macro"
+            pipe, X_test, y_test,
+            n_repeats=5, random_state=seed, scoring="f1_macro"
         )
         importances = pd.DataFrame({
             "feature": X_test.columns,
             "importance_mean": r.importances_mean,
             "importance_std": r.importances_std
         }).sort_values("importance_mean", ascending=False)
-
         importances.head(25).to_csv(os.path.join(outdir, "permutation_importance_top25.csv"), index=False)
     except Exception as e:
         write_text(os.path.join(outdir, "permutation_importance_error.txt"), str(e))
 
-    return {
-        "task": task_name,
-        "accuracy": acc,
-        "labels": labels_sorted
-    }
-
+    return {"task": task_name, "accuracy": acc, "labels": labels_sorted}
 
 def profile_data(steps: pd.DataFrame, choices: pd.DataFrame, typing: pd.DataFrame) -> Dict[str, object]:
     """
