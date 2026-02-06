@@ -1,0 +1,3 @@
+session_id,choice_point,time_to_choice_ms,pre_choice_backtrack_rate,pre_choice_keys_per_sec,pre_choice_mean_pause_ms,pre_choice_terminal_activity,chosen_label,chosen_idx
+S0001,branch,4944,0.0,0.0,0,0,P,0
+S0001,subchoice,2585,0.0,0.0,0,0,B,1

@@ -1,0 +1,11 @@
+session_id,step_idx,screen_id,time_since_start_ms,dwell_ms,nav_next_count,nav_back_count,backtrack_rate,terminal_submit_count,terminal_chars_total,unique_tokens,archive_add_count,keys_total,keys_per_sec,backspace_count,backspace_rate,enter_count,pause_count,mean_pause_ms,burstiness,hesitation_score,confusion_proxy,latent_state
+S0001,1,screen-01,3524,3423,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.059,0.082,confident
+S0001,2,screen-01,7939,4383,1,0,0.0,0,0,0,1,0,0.0,0,0.0,0,0,0,0.0,0.105,0.016,confident
+S0001,3,screen-02,11780,3780,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.049,0.109,confident
+S0001,4,screen-22,19473,7641,1,0,0.0,0,0,0,1,0,0.0,0,0.0,0,0,0,0.0,0.302,0.31,engaged
+S0001,5,screen-23,27663,8030,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.165,0.202,engaged
+S0001,6,screen-24,38207,10313,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.195,0.254,engaged
+S0001,7,screen-22,42866,4654,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.057,0.178,engaged
+S0001,8,screen-25,48496,5499,2,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.168,0.17,engaged
+S0001,9,screen-03,51471,2915,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.18,0.192,engaged
+S0001,10,screen-03,55708,4145,1,0,0.0,0,0,0,0,0,0.0,0,0.0,0,0,0,0.0,0.037,0.238,engaged

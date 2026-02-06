@@ -1,0 +1,2 @@
+session_id,episode_idx,screen_id,text_len,keys_total,keys_per_sec,backspace_count,backspace_rate,pause_count,mean_pause_ms,rewrite_ratio,certainty_proxy,load_label
+S0001,1,screen-12,98,147,5.511,4,0.027,9,1611,0.205,0.679,low_load
