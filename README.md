@@ -118,12 +118,6 @@ def group_split_idx(
     train_idx, test_idx = next(splitter.split(X, y, groups=df[group_col]))
     return train_idx, test_idx
 
-    X_train = X.iloc[train_idx].copy()
-    X_test = X.iloc[test_idx].copy()
-    y_train = y.iloc[train_idx].copy()
-    y_test = y.iloc[test_idx].copy()
-    return X_train, X_test, y_train, y_test
-
 
 def build_preprocessor(X: pd.DataFrame) -> ColumnTransformer:
     """
@@ -314,58 +308,82 @@ def profile_data(steps: pd.DataFrame, choices: pd.DataFrame, typing: pd.DataFram
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Fourthorse Trial Mode ML Pipeline")
-    parser.add_argument("--zip_path", type=str, default="fourthorse_trial_dummy_dataset.zip",
-                        help="Path to fourthorse_trial_dummy_dataset.zip")
-    parser.add_argument("--extract_dir", type=str, default="dataset_unzipped",
-                        help="Where to unzip the dataset")
-    parser.add_argument("--outdir", type=str, default="results",
-                        help="Output directory for reports/models")
+    parser.add_argument(
+        "--zip_path",
+        type=str,
+        default="fourthorse_trial_dummy_dataset.zip",
+        help="Path to fourthorse_trial_dummy_dataset.zip",
+    )
+    parser.add_argument(
+        "--extract_dir",
+        type=str,
+        default="dataset_unzipped",
+        help="Where to unzip the dataset",
+    )
+    parser.add_argument(
+        "--outdir",
+        type=str,
+        default="results",
+        help="Output directory for reports/models",
+    )
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    zip_path = args.zip_path
-    if not os.path.exists(zip_path):
-        # try relative to current working directory
-        raise FileNotFoundError(f"Zip not found: {zip_path}")
-
     ensure_dir(args.outdir)
 
-    # 1) Unzip
-    paths = unzip_dataset(zip_path, args.extract_dir)
+    # -------------------------
+    # Load data: zip OR csv fallback
+    # -------------------------
+    zip_path = args.zip_path
 
-    # 2) Load
-    steps = load_csv(paths.steps_csv)
-    choices = load_csv(paths.choices_csv)
-    typing = load_csv(paths.typing_csv)
+    if os.path.exists(zip_path):
+        paths = unzip_dataset(zip_path, args.extract_dir)
+        steps = load_csv(paths.steps_csv)
+        choices = load_csv(paths.choices_csv)
+        typing = load_csv(paths.typing_csv)
+    else:
+        # fallback: read directly from ./data or current folder
+        if os.path.exists("data/steps.csv"):
+            steps = pd.read_csv("data/steps.csv")
+            choices = pd.read_csv("data/choices.csv")
+            typing = pd.read_csv("data/typing.csv")
+        else:
+            steps = pd.read_csv("steps.csv")
+            choices = pd.read_csv("choices.csv")
+            typing = pd.read_csv("typing.csv")
 
-    # 3) Validate schemas (minimal required columns)
+    # -------------------------
+    # Validate schemas (minimal required columns)
+    # -------------------------
     validate_required_columns(steps, ["session_id", "latent_state"], "steps.csv")
     validate_required_columns(choices, ["session_id", "choice_point", "chosen_label"], "choices.csv")
     validate_required_columns(typing, ["session_id", "load_label"], "typing.csv")
 
-    # 4) Profile
+    # -------------------------
+    # Profile
+    # -------------------------
     prof = profile_data(steps, choices, typing)
     write_json(os.path.join(args.outdir, "data_profile.json"), prof)
 
-    # 5) Task A — latent state inference (steps.csv)
-    # We DROP session_id to avoid memorization; keep screen_id if present (it’s legit context).
+    # -------------------------
+    # Task A — latent state inference (steps.csv)
+    # -------------------------
     taskA_dir = os.path.join(args.outdir, "task_latent_state_steps")
     taskA = run_task(
         df=steps,
         task_name="Latent State (steps.csv)",
         label_col="latent_state",
-        drop_cols=["session_id"],  # keep step_idx, screen_id, etc.
+        drop_cols=["session_id"],  # prevent memorization
         outdir=taskA_dir,
-        seed=args.seed
+        seed=args.seed,
     )
 
-    # 6) Task B — strategy choice prediction (branch-only rows)
-    # IMPORTANT: filter to choice_point == "branch" so chosen_label is P/D/B/H.
+    # -------------------------
+    # Task B — strategy choice prediction (branch-only rows)
+    # -------------------------
     branch = choices.copy()
-    if "choice_point" in branch.columns:
-        branch = branch[branch["choice_point"] == "branch"].copy()
+    branch = branch[branch["choice_point"] == "branch"].copy()
 
-    # If someone accidentally passes a dataset without branch rows, fail loudly.
     if len(branch) == 0:
         raise ValueError("No branch choice rows found (choice_point == 'branch').")
 
@@ -376,10 +394,12 @@ def main() -> None:
         label_col="chosen_label",
         drop_cols=["session_id", "choice_point"],
         outdir=taskB_dir,
-        seed=args.seed
+        seed=args.seed,
     )
 
-    # 7) Task C — typing load classification (typing.csv)
+    # -------------------------
+    # Task C — typing load classification (typing.csv)
+    # -------------------------
     taskC_dir = os.path.join(args.outdir, "task_typing_load")
     taskC = run_task(
         df=typing,
@@ -387,10 +407,12 @@ def main() -> None:
         label_col="load_label",
         drop_cols=["session_id"],
         outdir=taskC_dir,
-        seed=args.seed
+        seed=args.seed,
     )
 
-    # 8) Summary
+    # -------------------------
+    # Summary
+    # -------------------------
     summary = {
         "task_latent_state_steps": {"accuracy": float(taskA["accuracy"]), "labels": taskA["labels"]},
         "task_strategy_choice_branch": {"accuracy": float(taskB["accuracy"]), "labels": taskB["labels"]},
