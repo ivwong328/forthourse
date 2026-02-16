@@ -11,7 +11,7 @@ from typing import List, Tuple, Dict
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -167,7 +167,12 @@ def eval_task(
     needed = ["session_id", label_col] + [c for c in feature_cols if c in df.columns]
     df2 = df[needed].dropna(subset=[label_col]).copy()
 
+    # SAFE split: group split if >=2 sessions, else row split fallback
+if "session_id" in df2.columns and df2["session_id"].nunique() >= 2:
     tr_idx, te_idx = group_split_idx(df2, label_col=label_col, group_col="session_id", seed=seed)
+else:
+    idx = np.arange(len(df2))
+    tr_idx, te_idx = train_test_split(idx, test_size=0.2, random_state=seed, shuffle=True)
     tr = df2.iloc[tr_idx].copy()
     te = df2.iloc[te_idx].copy()
 
