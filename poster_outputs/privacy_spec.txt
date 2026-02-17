@@ -1,0 +1,4 @@
+- No raw text stored
+- No keystroke streams stored
+- Aggregated features only
+- session_id only for splitting

@@ -1,0 +1,4 @@
+task,model,macro_f1,acc,n_train,n_test
+latent_state,majority,1.0,1.0,8,2
+latent_state,logreg,1.0,1.0,8,2
+latent_state,rf,1.0,1.0,8,2
