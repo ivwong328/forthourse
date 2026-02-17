@@ -199,54 +199,96 @@ def macro_f1(y_true, y_pred) -> float:
 # Task evaluation
 # -----------------------------
 
+from typing import List, Dict, Optional
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+
 def eval_task(
     task: str,
     df: pd.DataFrame,
     label_col: str,
     feature_cols: List[str],
-    eval_dir: str,
+    outdir: str,
     seed: int,
     setting: str = "both",
 ) -> List[Dict[str, object]]:
-    ensure_dir(eval_dir)
+    """
+    Evaluate 3 baselines (majority/logreg/rf) with GROUP split by session_id.
 
-    needed = ["session_id", label_col] + [c for c in feature_cols if c in df.columns]
+    Writes (into outdir):
+      - {task}__{setting}__{model}__confusion.csv
+      - {task}__{setting}__{model}__report.txt
+      - {task}__{setting}__{model}.joblib  (logreg/rf only)
+    Returns: list of metric dict rows for metrics_summary.csv.
+    """
+    ensure_dir(outdir)
+
+    # Keep only columns that exist
+    used_feats = [c for c in feature_cols if c in df.columns]
+
+    # Must have session_id + label
+    needed = ["session_id", label_col] + used_feats
     df2 = df[needed].dropna(subset=[label_col]).copy()
 
+    # If too small, skip
+    if len(df2) < 2:
+        skip_path = os.path.join(outdir, f"{task}_SKIPPED.txt")
+        with open(skip_path, "w", encoding="utf-8") as f:
+            f.write(f"SKIPPED: not enough rows after dropping NA for {label_col}. Rows={len(df2)}\n")
+        return []
+
+    # Split
     tr_idx, te_idx = group_split_idx(df2, label_col=label_col, group_col="session_id", seed=seed)
+
     tr = df2.iloc[tr_idx].copy()
     te = df2.iloc[te_idx].copy()
 
+    # If split produced empty side, skip (prevents SimpleImputer crash)
+    if len(tr) == 0 or len(te) == 0:
+        skip_path = os.path.join(outdir, f"{task}_SKIPPED.txt")
+        with open(skip_path, "w", encoding="utf-8") as f:
+            f.write(
+                "SKIPPED: train/test split produced empty set.\n"
+                f"Rows={len(df2)} train={len(tr)} test={len(te)} unique_sessions={df2['session_id'].nunique()}\n"
+            )
+        return []
+
     y_tr = tr[label_col].astype(str)
     y_te = te[label_col].astype(str)
+
     X_tr = tr.drop(columns=[label_col, "session_id"])
     X_te = te.drop(columns=[label_col, "session_id"])
 
-    labels_sorted = sorted(pd.Series(pd.concat([y_tr, y_te])).unique().tolist())
+    labels_sorted = sorted(pd.Series(pd.concat([y_tr, y_te])).dropna().unique().tolist())
 
     rows: List[Dict[str, object]] = []
+
     for model_name in ["majority", "logreg", "rf"]:
         pipe = build_pipeline(X_tr, model_name=model_name, seed=seed)
         pipe.fit(X_tr, y_tr)
         pred = pipe.predict(X_te)
 
         acc = float(accuracy_score(y_te, pred))
-        mf1 = macro_f1(y_te, pred)
+        mf1 = float(f1_score(y_te, pred, average="macro", zero_division=0))
 
+        # confusion matrix
         cm = confusion_matrix(y_te, pred, labels=labels_sorted)
-        cm_path = os.path.join(eval_dir, f"{task}__{setting}__{model_name}__confusion.csv")
-        pd.DataFrame(
+        cm_df = pd.DataFrame(
             cm,
             index=[f"true_{l}" for l in labels_sorted],
             columns=[f"pred_{l}" for l in labels_sorted],
-        ).to_csv(cm_path, index=True)
+        )
+        cm_path = os.path.join(outdir, f"{task}__{setting}__{model_name}__confusion.csv")
+        cm_df.to_csv(cm_path, index=True)
 
+        # report
         rep = classification_report(y_te, pred, digits=4, zero_division=0)
-        write_text(os.path.join(eval_dir, f"{task}__{setting}__{model_name}__report.txt"), rep)
+        rep_path = os.path.join(outdir, f"{task}__{setting}__{model_name}__report.txt")
+        with open(rep_path, "w", encoding="utf-8") as f:
+            f.write(rep + "\n")
 
-        model_path = None
+        model_path: Optional[str] = None
         if model_name in ("logreg", "rf"):
-            model_path = os.path.join(eval_dir, f"{task}__{setting}__{model_name}.joblib")
+            model_path = os.path.join(outdir, f"{task}__{setting}__{model_name}.joblib")
             joblib.dump(pipe, model_path)
 
         rows.append({
