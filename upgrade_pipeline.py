@@ -215,12 +215,32 @@ def eval_task(
 
     tr_idx, te_idx = group_split_idx(df2, label_col=label_col, group_col="session_id", seed=seed)
     tr = df2.iloc[tr_idx].copy()
-    te = df2.iloc[te_idx].copy()
+te = df2.iloc[te_idx].copy()
 
-    y_tr = tr[label_col].astype(str)
-    y_te = te[label_col].astype(str)
-    X_tr = tr.drop(columns=[label_col, "session_id"])
-    X_te = te.drop(columns=[label_col, "session_id"])
+# ---- tiny-data safety: if split produces empty train/test, skip gracefully
+if len(tr) == 0 or len(te) == 0:
+    # Write a small note so you can show why it was skipped
+    note = f"SKIP {task} ({setting}): n_train={len(tr)} n_test={len(te)} (dataset too small after split)\n"
+    write_text(os.path.join(eval_dir, f"{task}__{setting}__SKIPPED.txt"), note)
+
+    return [{
+        "task": task,
+        "setting": setting,
+        "model": "majority",
+        "macro_f1": float("nan"),
+        "acc": float("nan"),
+        "n_train": int(len(tr)),
+        "n_test": int(len(te)),
+        "model_path": None,
+        "skipped": True,
+        "reason": "empty_train_or_test_after_split",
+    }]
+
+y_tr = tr[label_col].astype(str)
+y_te = te[label_col].astype(str)
+X_tr = tr.drop(columns=[label_col, "session_id"])
+X_te = te.drop(columns=[label_col, "session_id"])
+
 
     labels_sorted = sorted(pd.Series(pd.concat([y_tr, y_te])).unique().tolist())
 
